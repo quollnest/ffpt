@@ -17,9 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::pauli::{Pauli, PauliTuple};
 
 use bitvec::vec::BitVec;
-use bitvec::ptr::BitRef;
 use bitvec::slice::BitSlice;
-use bitvec::field::BitField;
 
 use core::ops::{BitXorAssign, BitOrAssign, BitXor, BitOr};
 
@@ -97,14 +95,37 @@ impl FFStacks {
         ff.z.force_align();
         return ff;
     }
+
+    pub fn get_width(&self) -> usize {
+        self.width
+    }
+
+    pub fn get_vecs(&self) -> (&BitVec, &BitVec) {
+        (&self.x, &self.z)
+    }
         
-    //TODO: Sice the bitvec is bit index, we want to likely buffer operations
+    //TODO: Sice the bitvec is bit index, 
+    // we want to likely buffer operations
     //into a vector operation
     //TODO: Align the bitvectors on WORD lines, buffer and SIMD it
     pub fn encode(&mut self, qubit: usize, frame_offset: usize, 
         pauli: PauliTuple) {
-        self.x.set((qubit * self.width) + frame_offset, pauli.get_x());
-        self.z.set((qubit * self.width) + frame_offset, pauli.get_z());
+        self.x.set((qubit * self.width) + 
+            frame_offset, pauli.get_x());
+        self.z.set((qubit * self.width) + 
+            frame_offset, pauli.get_z());
+    }
+
+    pub fn with_bitvecs(bx: BitVec, bz: BitVec, width: usize)
+        -> Self {
+
+        let mut ff = FFStacks {
+            x: bx, z: bz, width,
+            copy_space: FFCopySpace::new(width)
+        };
+        ff.x.force_align();
+        ff.z.force_align();
+        return ff;
     }
    
     
@@ -119,13 +140,12 @@ impl FFStacks {
         x_ref.bitxor_assign(&self.z[offset..offset+1])    
     }
 
-    /// Conjugate the PauliStack with the Hadamard gate ignoring phases.
+    /// Conjugate the PauliStack with the Hadamard gate 
+    /// ignoring phases.
     /// TODO: Validate this operation
     pub fn h(&mut self, qubit: usize, frame_idx: usize) {
-        //self.swap_space.copy_within(self.x[qubit..], self.width);
 
         let offset = (qubit * self.width) + frame_idx;
-        //eprintln!("off:{}, qbit:{}, w:{}, f:{}", offset, qubit, self.width, frame_idx);
         let z_temp = *self.z.get(offset).unwrap();
         let x_temp = *self.x.get(offset).unwrap();
         self.z.set(offset, x_temp);
@@ -165,16 +185,42 @@ impl FFStacks {
         return (bit_1_slice, bit_2_slice);
     }
 
-    pub fn sum_up(&self, qubit: usize, filter: &[bool]) -> PauliTuple {
-        unimplemented!()
-    }
+    //TODO: I think there is a faster way but I'll
+    //be accurate to the original implementation
+    pub fn sum_up(&self, qubit: usize, filter: &[bool]) -> (bool, bool) {
+        
+        let width = self.width;
+        let control_loc = qubit * width;
+        let control_end = control_loc + width;
 
-    ///
-    /// Gets the offset of the bitvec as a slice using the qubit
-    /// and internally the width of the vector as given on construction
-    ///
-    pub fn bitvecs_slice_of_qubit_ref(&self, qubit: usize) {
-        unimplemented!()
+        let x_res = 
+            self.x[control_loc..control_end]
+            .iter()
+            .enumerate()
+            .filter_map(
+                |(i, f)| 
+                { if filter[i] { Some(f) } 
+                    else { None } })
+            .fold(false, 
+                | acc, next | acc ^ 
+                *next 
+            );
+
+
+        let z_res = 
+            self.z[control_loc..control_end]
+            .iter()
+            .enumerate()
+            .filter_map(
+                |(i, f)| 
+                { if filter[i] { Some(f) } 
+                    else { None } })
+            .fold(false, 
+                | acc, next | acc ^ 
+                *next 
+            );
+ 
+        (x_res, z_res)
     }
 
     pub fn cx(&mut self, control_bit: usize, target_bit: usize) {
@@ -185,81 +231,123 @@ impl FFStacks {
         let control_end = control_loc + width;
         let target_end = target_loc + width;
 
-        //eprintln!("c:{} t:{} w:{} cloc:{} tloc:{}", 
-        //    control_bit, target_bit, width, control_loc, target_loc);
-        //TODO: Consider re-use of memory instead of new bitvec allocations
-        //Pref Safe version, TODO: Reduce the cost of an extra copy
-        //let tx_mut_copy = &mut self.x[target_loc..target_end].to_bitvec();
-        //let cz_mut_copy = &mut self.x[control_loc..control_end].to_bitvec();
+        
+        self.copy_space.copy_a
+            .copy_from_bitslice(&self.x[target_loc..target_end]);
+        self.copy_space.copy_b
+            .copy_from_bitslice(&self.x[control_loc..control_end]);
 
-        self.copy_space.copy_a.copy_from_bitslice(&self.x[target_loc..target_end]);
-        self.copy_space.copy_b.copy_from_bitslice(&self.x[control_loc..control_end]);
+        self.copy_space.copy_a
+            .bitxor_assign(&self.x[control_loc..control_end]);
+        self.copy_space.copy_b
+            .bitxor_assign(&self.z[target_loc..target_end]);
 
-        self.copy_space.copy_a.bitxor_assign(&self.x[control_loc..control_end]);
-        self.copy_space.copy_b.bitxor_assign(&self.z[target_loc..target_end]);
+        self.x[target_loc..target_end]
+            .copy_from_bitslice(self.copy_space.copy_a
+                .as_bitslice());
 
-        self.x[target_loc..target_end].copy_from_bitslice(self.copy_space.copy_a.as_bitslice());
-        self.z[control_loc..control_end].copy_from_bitslice(self.copy_space.copy_a.as_bitslice());
+        self.z[control_loc..control_end]
+            .copy_from_bitslice(self.copy_space.copy_a
+                .as_bitslice());
             
     }
+
 
     pub fn cz(&mut self, bit_a: usize, bit_b: usize) {
                
         let width = self.width;
         let a_loc = bit_a * width;
         let b_loc = bit_b * width;
+        let a_end = a_loc + width;
+        let b_end = b_loc + width;
 
-        let b_x = &mut self.x[b_loc..width].to_bitvec();
-        let a_x = &mut self.x[b_loc..width].to_bitvec();
 
+        self.copy_space.copy_a
+            .copy_from_bitslice(&self.x[b_loc..b_end]);
+        self.copy_space.copy_b
+            .copy_from_bitslice(&self.x[b_loc..b_end]);
+ 
 
-        self.z[a_loc..width].copy_from_bitslice(b_x.as_bitslice());
-        self.z[b_loc..width].copy_from_bitslice(a_x.as_bitslice());
+        self.z[a_loc..a_end]
+            .copy_from_bitslice(
+                self.copy_space.copy_a.as_bitslice());
+        self.z[b_loc..b_end]
+            .copy_from_bitslice(
+                self.copy_space.copy_b.as_bitslice());
 
     }
+
 
     pub fn cy(&mut self, control_bit: usize, target_bit: usize) {
         let width = self.width;
         let control_loc = control_bit * width;
+        let control_end = control_loc + width;
         let target_loc = target_bit * width;
+        let target_end = target_loc + width;
+        
 
-        //TODO: Consider reusing memory
-        let tx_mut_copy = &mut self.x[target_loc..width].to_bitvec();
-        let tz_mut_copy = &mut self.z[target_loc..width].to_bitvec();
-        
-        let cz_mut_copy = &mut self.z[control_loc..width].to_bitvec();
-        
-        cz_mut_copy.bitxor_assign(&self.z[target_loc..width]);
-        cz_mut_copy.bitxor_assign(&self.x[target_loc..width]);
-        tz_mut_copy.bitxor_assign(&self.x[control_loc..width]);
-        tx_mut_copy.bitxor_assign(&self.x[control_loc..width]);
+        self.copy_space.copy_a
+            .copy_from_bitslice(&self.x[target_loc..target_end]);
+        self.copy_space.copy_b
+            .copy_from_bitslice(&self.z[target_loc..target_end]);
+        self.copy_space.copy_c
+            .copy_from_bitslice(&self.x[control_loc..control_end]);
 
+
+
+
+        self.copy_space.copy_a
+            .bitxor_assign(&self.z[target_loc..target_end]);
+        self.copy_space.copy_a
+            .bitxor_assign(&self.x[target_loc..target_end]);
+        self.copy_space.copy_b
+            .bitxor_assign(&self.x[control_loc..control_end]);
+        self.copy_space.copy_c
+            .bitxor_assign(&self.x[control_loc..control_end]);
         
-        self.x[target_loc..width].copy_from_bitslice(tx_mut_copy.as_bitslice());
-        self.z[target_loc..width].copy_from_bitslice(tz_mut_copy.as_bitslice());
-        self.z[control_loc..width].copy_from_bitslice(cz_mut_copy.as_bitslice());
+
+
+
+        self.x[target_loc..target_end]
+            .copy_from_bitslice(self.copy_space.copy_a
+                .as_bitslice());
+
+        self.z[target_loc..target_end]
+            .copy_from_bitslice(self.copy_space.copy_b
+                .as_bitslice());
+
+        self.z[control_loc..control_end]
+            .copy_from_bitslice(self.copy_space.copy_c
+                .as_bitslice());
 
     }
+
 
     pub fn swap(&mut self, bit_a: usize, bit_b: usize) {
         
         let width = self.width;
         let control_loc = bit_a * width;
         let target_loc = bit_b * width;
+        let control_end = control_loc + width;
+        let target_end = target_loc + width;
 
         
-        self.copy_space.copy_a.copy_from_bitslice(& self.x[control_loc..width]);
-        self.copy_space.copy_b.copy_from_bitslice(& self.z[control_loc..width]);
-        self.copy_space.copy_c.copy_from_bitslice(& self.x[target_loc..width]);
-        self.copy_space.copy_d.copy_from_bitslice(& self.z[target_loc..width]);
+        self.copy_space.copy_a
+            .copy_from_bitslice(& self.x[control_loc..control_end]);
+        self.copy_space.copy_b
+            .copy_from_bitslice(& self.z[control_loc..control_end]);
+        self.copy_space.copy_c
+            .copy_from_bitslice(& self.x[target_loc..target_end]);
+        self.copy_space.copy_d
+            .copy_from_bitslice(& self.z[target_loc..target_end]);
 
-        self.x[target_loc..width].copy_from_bitslice(
+        self.x[target_loc..target_end].copy_from_bitslice(
             self.copy_space.copy_a.as_bitslice());
-        self.z[target_loc..width].copy_from_bitslice(
+        self.z[target_loc..target_end].copy_from_bitslice(
             self.copy_space.copy_b.as_bitslice());
-        self.x[control_loc..width].copy_from_bitslice(
+        self.x[control_loc..control_end].copy_from_bitslice(
             self.copy_space.copy_c.as_bitslice());
-        self.z[control_loc..width].copy_from_bitslice(
+        self.z[control_loc..control_end].copy_from_bitslice(
             self.copy_space.copy_d.as_bitslice());
     
     }
@@ -269,25 +357,35 @@ impl FFStacks {
         let control_loc = bit_a * width;
         let target_loc = bit_b * width;
 
+        let control_end = control_loc + width;
+        let target_end = target_loc + width;
         
-        self.copy_space.copy_a.copy_from_bitslice(& self.x[control_loc..width]);
-        self.copy_space.copy_b.copy_from_bitslice(& self.z[control_loc..width]);
-        self.copy_space.copy_c.copy_from_bitslice(& self.x[target_loc..width]);
-        self.copy_space.copy_d.copy_from_bitslice(& self.z[target_loc..width]);
+        self.copy_space.copy_a
+            .copy_from_bitslice(& self.x[control_loc..control_end]);
+        self.copy_space.copy_b
+            .copy_from_bitslice(& self.z[control_loc..control_end]);
+        self.copy_space.copy_c
+            .copy_from_bitslice(& self.x[target_loc..target_end]);
+        self.copy_space.copy_d
+            .copy_from_bitslice(& self.z[target_loc..target_end]);
 
         //TODO: Validate the results
-        self.copy_space.copy_d.bitxor_assign(self.copy_space.copy_c.as_bitslice());
-        self.copy_space.copy_d.bitxor_assign(self.copy_space.copy_a.as_bitslice());
-        self.copy_space.copy_b.bitxor_assign(self.copy_space.copy_c.as_bitslice());
-        self.copy_space.copy_b.bitxor_assign(self.copy_space.copy_a.as_bitslice());
+        self.copy_space.copy_d
+            .bitxor_assign(self.copy_space.copy_c.as_bitslice());
+        self.copy_space.copy_d
+            .bitxor_assign(self.copy_space.copy_a.as_bitslice());
+        self.copy_space.copy_b
+            .bitxor_assign(self.copy_space.copy_c.as_bitslice());
+        self.copy_space.copy_b
+            .bitxor_assign(self.copy_space.copy_a.as_bitslice());
 
-        self.x[target_loc..width].copy_from_bitslice(
+        self.x[target_loc..target_end].copy_from_bitslice(
             self.copy_space.copy_a.as_bitslice());
-        self.z[target_loc..width].copy_from_bitslice(
+        self.z[target_loc..target_end].copy_from_bitslice(
             self.copy_space.copy_b.as_bitslice());
-        self.x[control_loc..width].copy_from_bitslice(
+        self.x[control_loc..control_end].copy_from_bitslice(
             self.copy_space.copy_c.as_bitslice());
-        self.z[control_loc..width].copy_from_bitslice(
+        self.z[control_loc..control_end].copy_from_bitslice(
             self.copy_space.copy_d.as_bitslice());
 
     }
@@ -299,49 +397,66 @@ impl FFStacks {
         let control_loc = control_bit * width;
         let target_loc = target_bit * width;
 
+        let control_end = control_loc + width;
+        let target_end = target_loc + width;
         
-        self.copy_space.copy_a.copy_from_bitslice(& self.x[target_loc..width]);
-        self.copy_space.copy_b.copy_from_bitslice(& self.x[control_loc..width]);
+        self.copy_space.copy_a
+            .copy_from_bitslice(& self.x[target_loc..target_end]);
+        self.copy_space.copy_b
+            .copy_from_bitslice(& self.x[control_loc..control_end]);
 
         //TODO: Validate the results
-        self.copy_space.copy_d.bitxor_assign(self.copy_space.copy_c.as_bitslice());
-        self.copy_space.copy_d.bitxor_assign(self.copy_space.copy_a.as_bitslice());
+        self.copy_space.copy_d
+            .bitxor_assign(self.copy_space.copy_c.as_bitslice());
+        self.copy_space.copy_d
+            .bitxor_assign(self.copy_space.copy_a.as_bitslice());
 
-        self.x[target_loc..width].copy_from_bitslice(
+        self.x[target_loc..target_end].copy_from_bitslice(
             self.copy_space.copy_a.as_bitslice());
-        self.x[control_loc..width].copy_from_bitslice(
+        self.x[control_loc..control_end].copy_from_bitslice(
             self.copy_space.copy_b.as_bitslice());
     }
     
     pub fn zcy(&mut self, control_bit: usize, target_bit: usize) {
+
         let width = self.width;
         let control_loc = control_bit * width;
         let target_loc = target_bit * width;
 
+        let control_end = control_loc + width;
+        let target_end = target_loc + width;
         
-        self.copy_space.copy_a.copy_from_bitslice(& self.x[control_loc..width]);
-        self.copy_space.copy_b.copy_from_bitslice(& self.z[target_loc..width]);
-        self.copy_space.copy_c.copy_from_bitslice(& self.x[target_loc..width]);
+        self.copy_space.copy_a
+            .copy_from_bitslice(& self.x[control_loc..control_end]);
+        self.copy_space.copy_b
+            .copy_from_bitslice(& self.z[target_loc..target_end]);
+        self.copy_space.copy_c
+            .copy_from_bitslice(& self.x[target_loc..target_end]);
 
         //TODO: Validate the results
-        self.copy_space.copy_a.bitxor_assign(&self.z[target_loc..width]);
-        self.copy_space.copy_a.bitxor_assign(&self.x[target_loc..width]);
-        self.copy_space.copy_b.bitxor_assign(&self.z[control_loc..width]);
-        self.copy_space.copy_c.bitxor_assign(&self.z[control_loc..width]);
+        self.copy_space.copy_a
+            .bitxor_assign(&self.z[target_loc..target_end]);
+        self.copy_space.copy_a
+            .bitxor_assign(&self.x[target_loc..target_end]);
+        self.copy_space.copy_b
+            .bitxor_assign(&self.z[control_loc..control_end]);
+        self.copy_space.copy_c
+            .bitxor_assign(&self.z[control_loc..control_end]);
 
-        self.x[target_loc..width].copy_from_bitslice(
+        self.x[target_loc..target_end].copy_from_bitslice(
             self.copy_space.copy_a.as_bitslice());
-        self.z[target_loc..width].copy_from_bitslice(
+        self.z[target_loc..target_end].copy_from_bitslice(
             self.copy_space.copy_b.as_bitslice());
-        self.x[control_loc..width].copy_from_bitslice(
+        self.x[control_loc..control_end].copy_from_bitslice(
             self.copy_space.copy_c.as_bitslice());
     }
 
 }
 
+
 #[derive(Debug)]
 pub struct FastFrames {
-    ffs: FFStacks,
+    pub ffs: FFStacks,
     frames_num: usize,
     nqbits: usize,
     //TODO: Supply an inverse mapping
@@ -354,7 +469,6 @@ impl FastFrames {
     pub fn new(num_keys: usize) -> Self {
        
         FastFrames {
-            //stacks: vec![PauliTuple::new_i(); num_keys*num_keys],
             ffs: FFStacks::with_capacity(
                         num_keys*num_keys,
                         num_keys),
@@ -371,6 +485,10 @@ impl FastFrames {
     pub fn as_storage(&self) -> &Self {
         &self
     }
+    
+    pub fn get_stacks(&self) -> &FFStacks {
+        &self.ffs
+    }
 
     pub fn len(&self) -> usize {
         return self.nqbits
@@ -379,6 +497,7 @@ impl FastFrames {
     pub fn frames_num(&self) -> usize {
         self.frames_num
     }
+
 
     // TODO: This should be known on construction
     // Transform this later on
@@ -406,8 +525,93 @@ impl FastFrames {
         self.track_pauli_ff(qubit, pauli);
     }
 
-    pub fn transpose<T>(len: usize) {
-        unimplemented!()
+    /// Transposition that will  
+    pub fn transpose(&self, _: usize) -> FastFrames {
+        
+        let width = self.ffs.width;
+
+        let mut x_vec: BitVec = 
+            BitVec::repeat(false,
+            self.nqbits * self.frames_num);
+
+        let mut z_vec: BitVec = 
+            BitVec::repeat(false,
+            self.nqbits * self.frames_num);
+        
+        let mut x_copy_vec: BitVec = 
+            BitVec::repeat(false, 
+            self.nqbits);
+        let mut z_copy_vec: BitVec = 
+            BitVec::repeat(false, 
+            self.nqbits);
+
+        //1. Iterate from 0 to Frames_Num
+        for fidx in 0..self.frames_num {
+            //2. Access bit at: (ifidx * nqbits) + fidx
+            
+            let f_start = fidx * width;
+            let f_end = f_start + width;
+
+            for ifidx in fidx..self.frames_num {
+                
+                let xv = *self.ffs.x
+                    .get((ifidx * width) 
+                        + fidx)
+                    .as_deref()
+                    .unwrap();
+
+                let zv = *self.ffs.x
+                    .get((ifidx * width) 
+                        + fidx)
+                    .as_deref()
+                    .unwrap();
+
+                x_copy_vec.set(ifidx, xv);
+                z_copy_vec.set(ifidx, zv);
+            }
+            x_vec[f_start..f_end].copy_from_bitslice(
+                x_copy_vec.as_bitslice());
+
+            z_vec[f_start..f_end].copy_from_bitslice(
+                z_copy_vec.as_bitslice());
+           
+        }
+        
+        FastFrames {
+            ffs: FFStacks::with_bitvecs(x_vec, z_vec, width),
+            frames_num: self.frames_num,
+            nqbits: self.nqbits
+        }
+    }
+
+    pub fn to_transpose_2d(&self) -> Vec<Vec<u8>> {
+        
+        let flatten = self.transpose(self.frames_num);
+
+        let mut twodee = Vec::with_capacity(self.nqbits);
+        
+        for i in 0..self.frames_num {
+            let mut byte_enc_vec = Vec::new();
+            let width = self.ffs.width;
+
+            for j in 0..self.frames_num {
+                
+                let x = *flatten.ffs.x
+                    .get((i * width) + j)
+                    .as_deref().unwrap() as u8;
+
+                let z = *flatten.ffs.z
+                    .get((i * width) + j)
+                    .as_deref().unwrap() as u8;
+
+                let encoded = x | z << 1;
+                byte_enc_vec.push(encoded);
+            }
+
+            twodee.push(byte_enc_vec);
+        }
+
+        twodee
     }
 
     // Fixing the PauliStack operations that will operate only on sets of PauliTuples
