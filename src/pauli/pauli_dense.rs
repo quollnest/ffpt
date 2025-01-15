@@ -5,24 +5,30 @@ use serde::{Deserialize, Serialize};
 
 use super::{Pauli, tableau_encoding};
 
-/// Pauli encoding into two bits. It is basically an "u2", in terms of a single Pauli
+/// Pauli encoding into two bits. It is basically an 
+/// "u2", in terms of a single Pauli
 /// operator (without phases).
 ///
-/// The inner storage holds the invariant that it's value is between 0 and 3
+/// The inner storage holds the invariant that it's value 
+/// is between 0 and 3
 /// (inclusive). The encoding follows [tableau_encoding]. Compare
 /// [PauliEnum](super::PauliEnum) for a similar representation.
 ///
-/// Unsafe code might rely on that invariant (e.g., via accessing the storage with
-/// [Self::storage] and using it to index a pointer), therefore, functions that make it
+/// Unsafe code might rely on that invariant (e.g., 
+/// via accessing the storage with
+/// [Self::storage] and using it to index a pointer), 
+/// therefore, functions that make it
 /// possible to circumvent the invariant are unsafe.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, Default, 
+    PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PauliDense {
     storage: u8,
 }
 
 impl PauliDense {
-    /// Create a [Pauli] from a [u8] without checking the types invariant.
+    /// Create a [Pauli] from a [u8] 
+    /// without checking the types invariant.
     ///
     /// # Safety
     ///
@@ -102,13 +108,15 @@ impl PauliDense {
         self.storage & 1
     }
 
-    /// Apply XOR on the encoded storage of `self` and the storage `other`, updating the
+    /// Apply XOR on the encoded storage of `self` 
+    /// and the storage `other`, updating the
     /// storage of `self` inplace.
     pub fn xor(&mut self, other: Self) {
         self.storage ^= other.storage;
     }
 
-    /// Apply XOR on the encoded storage of `self` and `other`, updating the storage of
+    /// Apply XOR on the encoded storage of `self` 
+    /// and `other`, updating the storage of
     /// `self` inplace.
     pub fn xor_u8(&mut self, other: u8) {
         self.storage ^= other;
@@ -198,7 +206,8 @@ impl Pauli for PauliDense {
 }
 
 use thiserror::Error;
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
+#[derive(Debug, Clone, Copy, Default, 
+    PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
 #[error("{0} is not between 0 and 3")]
 pub struct InvalidU8(pub u8);
 

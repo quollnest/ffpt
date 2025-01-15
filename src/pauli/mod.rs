@@ -2,6 +2,8 @@
 pub mod pauli;
 pub mod pauli_tuple;
 pub mod pauli_dense;
+mod pauli_test;
+
 
 pub use pauli::Pauli;
 pub use pauli_tuple::PauliTuple;

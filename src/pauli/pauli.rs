@@ -3,7 +3,6 @@
 /// Original code by Jannis Ruh
 ///
 ///
-
 macro_rules! const_pauli {
     ($($name:ident,)*) => {$(
         /// Pauli
@@ -53,10 +52,14 @@ pub trait Pauli {
     /// ```
     /// # fn main() { #![cfg_attr(coverage_nightly, coverage(off))]
     /// # use pauli_tracker::pauli::{Pauli, PauliDense};
-    /// assert_eq!(PauliDense::new_product(false, false), PauliDense::new_i());
-    /// assert_eq!(PauliDense::new_product(false, true), PauliDense::new_x());
-    /// assert_eq!(PauliDense::new_product(true, false), PauliDense::new_z());
-    /// assert_eq!(PauliDense::new_product(true, true), PauliDense::new_y());
+    /// assert_eq!(PauliDense::new_product(false, false), 
+    ///     PauliDense::new_i());
+    /// assert_eq!(PauliDense::new_product(false, true), 
+    ///     PauliDense::new_x());
+    /// assert_eq!(PauliDense::new_product(true, false), 
+    ///     PauliDense::new_z());
+    /// assert_eq!(PauliDense::new_product(true, true), 
+    ///     PauliDense::new_y());
     /// # }
     /// ```
     fn new_product(z: bool, x: bool) -> Self;
