@@ -3,9 +3,8 @@ use crate::ff::fastframe::FastFrames;
 use hashbrown::HashSet;
 
 use bitvec::vec::BitVec;
-use bitvec::slice::BitSlice;
 
-use core::ops::{BitXorAssign, BitOrAssign, BitXor, BitOr};
+use core::ops::BitOrAssign;
 
 ///
 ///
@@ -17,7 +16,7 @@ pub struct GraphBuffer {
 impl GraphBuffer {
     pub fn new() -> Self {
         GraphBuffer {
-            graph: Vec::new()
+            graph: vec![Vec::new()]
         }
     }
 
@@ -76,9 +75,10 @@ pub fn get_order(ffs: &FastFrames,
         
         let qloc = qidx * width;
         let qwidth = width;
+        let qloc_end = qloc+qwidth;
 
-        let z_stack = &zvec[qloc..qwidth];
-        let x_stack = &xvec[qloc..qwidth];
+        let z_stack = &zvec[qloc..qloc_end];
+        let x_stack = &xvec[qloc..qloc_end];
 
         let vmax = z_stack.len().max(x_stack.len());
         

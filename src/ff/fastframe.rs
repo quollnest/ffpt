@@ -110,6 +110,7 @@ impl FFStacks {
     //TODO: Align the bitvectors on WORD lines, buffer and SIMD it
     pub fn encode(&mut self, qubit: usize, frame_offset: usize, 
         pauli: PauliTuple) {
+        //println!("frame: {}", frame_offset);
         self.x.set((qubit * self.width) + 
             frame_offset, pauli.get_x());
         self.z.set((qubit * self.width) + 
@@ -467,11 +468,12 @@ pub struct FastFrames {
 impl FastFrames {
 
     pub fn new(num_keys: usize) -> Self {
-       
+        let nwidth = num_keys * 3; //TODO: Revisit assumption
+        let nkeys = num_keys * nwidth;
         FastFrames {
             ffs: FFStacks::with_capacity(
-                        num_keys*num_keys,
-                        num_keys),
+                        nkeys,
+                        nwidth),
             frames_num: 0,
             nqbits: num_keys,
         }
