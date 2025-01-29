@@ -6,12 +6,16 @@ pub use super::Pauli;
 /// A Pauli represented by two booleans values. 
 /// The first one is the X part and the
 /// second one is the Z part.
+#[derive(Debug)]
 pub struct PauliTuple(
     /// Z part
     pub bool,
     /// X part
     pub bool,
 );
+
+
+pub type PauliString = Vec<(usize, PauliTuple)>;
 
 impl Pauli for PauliTuple {
     const I: Self = Self(false, false);
@@ -90,4 +94,7 @@ impl Pauli for PauliTuple {
 }
 
 impl PauliTuple {
+    pub fn storage(&self) -> u8 {
+        self.tableau_encoding()
+    }
 }

@@ -2,16 +2,8 @@
 pub mod pauli;
 pub mod ff;
 pub mod graph;
-mod circuit;
+mod trackertest;
 mod tracker;
-
-
-
-
-#[cfg(test)]
-mod tests {
-    use crate::circuit;
-    
-
-}
+mod cols;
+//mod clifford;
 

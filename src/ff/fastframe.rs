@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 //use bitvec::prelude::{BitVec, BitSlice};
 
-use crate::pauli::{Pauli, PauliTuple};
+use crate::pauli::{Pauli, PauliTuple, PauliString};
 
 use bitvec::vec::BitVec;
 use bitvec::slice::BitSlice;
@@ -500,6 +500,21 @@ impl FastFrames {
         self.frames_num
     }
 
+
+    pub fn track_pauli_string(&mut self, string: PauliString) {
+
+        if self.nqbits == 0 {
+            return;
+        }
+        //for (_, p) in self.storage.iter_pairs_mut() {
+        //    p.push(Self::Pauli::new_i());
+        //}
+        for (i, p) in string {
+            self.ffs.encode(i, 
+                self.frames_num, p);
+        }
+        self.frames_num += 1;
+    }
 
     // TODO: This should be known on construction
     // Transform this later on

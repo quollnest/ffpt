@@ -2,12 +2,15 @@
 pub mod pauli;
 pub mod pauli_tuple;
 pub mod pauli_dense;
-mod pauli_test;
-
+//mod pauli_test;
+//pub mod pauli_string;
 
 pub use pauli::Pauli;
 pub use pauli_tuple::PauliTuple;
 pub use pauli_dense::PauliDense;
+
+
+pub type PauliString = Vec<(usize, PauliTuple)>;
 
 
 pub mod tableau_encoding {
