@@ -92,6 +92,7 @@ pub trait Pauli {
     fn sh(&mut self) {
         self.h();
         self.s();
+
     }
     /// Conjugate the Pauli with the HS gate ignoring phases.
     fn hs(&mut self) {
